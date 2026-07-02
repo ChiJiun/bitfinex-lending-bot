@@ -42,6 +42,23 @@ GitHub repo → Settings → Secrets and variables → Actions → New repositor
 
 repo → Actions → Bitfinex Lending Bot → **Run workflow**,勾選 `dry_run` 先跑一次,確認 log 顯示的掛單計畫合理,再取消勾選正式執行。之後排程就會自動跑。
 
+## 收益儀表板
+
+在本機執行(資料直接來自 Bitfinex API,不經過第三方):
+
+```
+py dashboard.py
+```
+
+會自動開啟 `http://localhost:8899`,顯示:
+
+- Funding 錢包總額、閒置資金、放貸中金額與加權利率
+- 今日 / 近 7 日 / 近 30 日利息、估算年化報酬
+- 近 60 天每日利息長條圖
+- 放貸中部位明細(利率、天數、到期時間)與等待成交的掛單
+
+需要 `.env` 裡有 API 金鑰(見下方),每 60 秒自動更新。
+
 ## 本機測試
 
 ```
