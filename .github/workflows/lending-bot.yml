@@ -1,0 +1,56 @@
+name: Bitfinex Lending Bot
+
+on:
+  schedule:
+    # 每 30 分鐘跑一次(UTC)。私人 repo 每月 2000 免費分鐘,這個頻率剛好夠用;
+    # 公開 repo 分鐘數無上限,可改成 "*/10 * * * *" 或 "*/15 * * * *"。
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "DRY_RUN(只顯示動作、不真的下單)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # keep-alive 空 commit 需要
+
+concurrency:
+  group: lending-bot
+  cancel-in-progress: false
+
+jobs:
+  lend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run lending bot
+        env:
+          BFX_API_KEY: ${{ secrets.BFX_API_KEY }}
+          BFX_API_SECRET: ${{ secrets.BFX_API_SECRET }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python bot.py
+
+      # 公開 repo 60 天沒 commit 排程會被 GitHub 自動停用,
+      # 超過 50 天沒動靜就推一個空 commit 保持活躍
+      - name: Keep-alive
+        if: github.event_name == 'schedule'
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          days=$(( (now - last) / 86400 ))
+          if [ "$days" -ge 50 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: keep scheduled workflow alive"
+            git push
+          fi

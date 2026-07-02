@@ -1,0 +1,34 @@
+{
+  "_說明": "所有利率單位都是「每日利率 %」。例如 0.02 代表 0.02%/日,約等於年化 7.3%。",
+  "stale_offer_minutes": 60,
+  "currencies": {
+    "USD": {
+      "enabled": true,
+      "min_offer_size": 150,
+      "max_offer_size": 5000,
+      "num_ladder_steps": 4,
+      "ladder_step_pct": 8,
+      "min_daily_rate_pct": 0.01,
+      "reserve_amount": 0,
+      "period_rules": [
+        { "min_daily_rate_pct": 0.1, "period_days": 120 },
+        { "min_daily_rate_pct": 0.05, "period_days": 30 },
+        { "min_daily_rate_pct": 0.0, "period_days": 2 }
+      ]
+    },
+    "UST": {
+      "enabled": false,
+      "min_offer_size": 150,
+      "max_offer_size": 5000,
+      "num_ladder_steps": 4,
+      "ladder_step_pct": 8,
+      "min_daily_rate_pct": 0.01,
+      "reserve_amount": 0,
+      "period_rules": [
+        { "min_daily_rate_pct": 0.1, "period_days": 120 },
+        { "min_daily_rate_pct": 0.05, "period_days": 30 },
+        { "min_daily_rate_pct": 0.0, "period_days": 2 }
+      ]
+    }
+  }
+}
