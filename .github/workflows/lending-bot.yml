@@ -2,8 +2,7 @@ name: Bitfinex Lending Bot
 
 on:
   schedule:
-    # 每 30 分鐘跑一次(UTC)。私人 repo 每月 2000 免費分鐘,這個頻率剛好夠用;
-    # 公開 repo 分鐘數無上限,可改成 "*/10 * * * *" 或 "*/15 * * * *"。
+    # 每 30 分鐘跑一次(UTC)。公開 repo 分鐘數無上限,可改成 "*/10 * * * *"。
     - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
@@ -13,7 +12,7 @@ on:
         default: false
 
 permissions:
-  contents: write # keep-alive 空 commit 需要
+  contents: write # 發佈儀表板資料與 keep-alive commit 需要
 
 concurrency:
   group: lending-bot
@@ -34,23 +33,41 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run lending bot
+        id: bot
+        shell: bash
         env:
           BFX_API_KEY: ${{ secrets.BFX_API_KEY }}
           BFX_API_SECRET: ${{ secrets.BFX_API_SECRET }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-        run: python bot.py
-
-      # 公開 repo 60 天沒 commit 排程會被 GitHub 自動停用,
-      # 超過 50 天沒動靜就推一個空 commit 保持活躍
-      - name: Keep-alive
-        if: github.event_name == 'schedule'
+        # 輸出留一份到 bot_run.log 給儀表板顯示,並保留原始退出碼
         run: |
-          last=$(git log -1 --format=%ct)
-          now=$(date +%s)
-          days=$(( (now - last) / 86400 ))
-          if [ "$days" -ge 50 ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit --allow-empty -m "chore: keep scheduled workflow alive"
-            git push
+          set +e
+          python bot.py 2>&1 | tee bot_run.log
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      # 就算機器人失敗也發佈,讓儀表板看得到錯誤 log
+      - name: Build encrypted dashboard data
+        if: always()
+        env:
+          BFX_API_KEY: ${{ secrets.BFX_API_KEY }}
+          BFX_API_SECRET: ${{ secrets.BFX_API_SECRET }}
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+          BOT_EXIT: ${{ steps.bot.outputs.exit_code || '1' }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python publish.py
+
+      - name: Commit dashboard data
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data.enc
+          if git diff --cached --quiet; then
+            echo "儀表板資料無變化,不需 commit"
+            exit 0
           fi
+          git commit -m "chore: update dashboard data"
+          git push || { git pull --rebase origin master && git push; }

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>綠葉放貸儀表板 🍃</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root { --green: #16a34a; --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid #334155; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; flex: 1; }
+  select, button, input { background: var(--card); color: var(--text); border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+  button { cursor: pointer; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border-radius: 12px; padding: 16px; }
+  .card .label { color: var(--muted); font-size: 13px; }
+  .card .value { font-size: 22px; font-weight: 600; margin-top: 6px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .green { color: var(--green); }
+  section { margin-top: 28px; }
+  h2 { font-size: 16px; color: var(--muted); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: right; font-size: 14px; }
+  th { background: #263548; color: var(--muted); font-weight: 500; }
+  th:first-child, td:first-child { text-align: left; }
+  tr + tr td { border-top: 1px solid #2c3d52; }
+  .empty { color: var(--muted); padding: 18px; text-align: center; }
+  #chartWrap { background: var(--card); border-radius: 12px; padding: 16px; height: 280px; }
+  #error { color: #f87171; margin: 12px 0; white-space: pre-wrap; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #14532d; color: #86efac; }
+  .badge.idle { background: #334155; color: var(--muted); }
+  .badge.dry { background: #78350f; color: #fcd34d; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+  /* 密碼解鎖畫面 */
+  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #gate .box { background: var(--card); border-radius: 16px; padding: 32px; width: 320px; text-align: center; }
+  #gate input { width: 100%; margin: 14px 0; text-align: center; }
+  #gate button { width: 100%; background: var(--green); border: none; font-weight: 600; }
+  #gateErr { color: #f87171; font-size: 13px; min-height: 18px; }
+  /* 執行紀錄 */
+  details.run { background: var(--card); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  details.run summary { padding: 12px 16px; cursor: pointer; display: flex; gap: 10px; align-items: center; font-size: 14px; list-style: none; }
+  details.run summary::-webkit-details-marker { display: none; }
+  details.run pre { margin: 0; padding: 12px 16px; background: #0b1120; font-size: 12px; overflow-x: auto; white-space: pre-wrap; color: #a5b4c8; }
+  .runTime { flex: 1; }
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <div style="font-size:34px">🍃</div>
+    <h1 style="font-size:18px">綠葉放貸儀表板</h1>
+    <p style="color:var(--muted);font-size:13px">資料已加密,請輸入儀表板密碼</p>
+    <input id="pw" type="password" placeholder="密碼" autofocus>
+    <div id="gateErr"></div>
+    <button onclick="unlock()">解鎖</button>
+  </div>
+</div>
+
+<header>
+  <h1>🍃 綠葉放貸儀表板</h1>
+  <select id="ccy"></select>
+  <button onclick="refresh()">重新整理</button>
+  <button onclick="lock()" title="清除記住的密碼">鎖定</button>
+</header>
+<main>
+  <div id="error"></div>
+  <div class="cards">
+    <div class="card"><div class="label">Funding 錢包總額</div><div class="value" id="balance">–</div><div class="sub" id="available"></div></div>
+    <div class="card"><div class="label">放貸中(已成交)</div><div class="value green" id="lentTotal">–</div><div class="sub" id="lentRate"></div></div>
+    <div class="card"><div class="label">今日利息</div><div class="value green" id="today">–</div><div class="sub" id="d7"></div></div>
+    <div class="card"><div class="label">近 30 日利息</div><div class="value green" id="d30">–</div><div class="sub" id="estApr"></div></div>
+  </div>
+  <section>
+    <h2>每日利息(近 60 天)</h2>
+    <div id="chartWrap"><canvas id="chart"></canvas></div>
+  </section>
+  <section>
+    <h2>放貸中部位</h2>
+    <div id="lentTable"></div>
+  </section>
+  <section>
+    <h2>掛單中(等待成交)</h2>
+    <div id="offerTable"></div>
+  </section>
+  <section>
+    <h2>機器人執行紀錄(最近 50 次)</h2>
+    <div id="runs"></div>
+  </section>
+</main>
+<footer>資料由 GitHub Actions 每輪執行後加密發佈 · 資料時間 <span id="updated">–</span></footer>
+
+<script>
+let chart, payload;
+const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const ts = ms => ms ? new Date(ms).toLocaleString("zh-TW", { hour12: false }) : "–";
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+async function decryptBlob(password, blob) {
+  const enc = new TextEncoder();
+  const km = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: b64d(blob.salt), iterations: blob.kdf_iters || 300000, hash: "SHA-256" },
+    km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64d(blob.iv) }, key, b64d(blob.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+async function fetchData(password) {
+  const r = await fetch("data.enc?t=" + Date.now(), { cache: "no-store" });
+  if (r.status === 404) throw new Error("尚無資料 — 等機器人在 GitHub Actions 跑完第一輪後就會出現");
+  if (!r.ok) throw new Error("讀取 data.enc 失敗: HTTP " + r.status);
+  try {
+    return await decryptBlob(password, await r.json());
+  } catch (e) {
+    throw new Error("WRONG_PASSWORD");
+  }
+}
+
+async function unlock() {
+  const pw = document.getElementById("pw").value;
+  const err = document.getElementById("gateErr");
+  err.textContent = "";
+  try {
+    payload = await fetchData(pw);
+  } catch (e) {
+    err.textContent = e.message === "WRONG_PASSWORD" ? "密碼錯誤" : e.message;
+    return;
+  }
+  sessionStorage.setItem("dashpw", pw);
+  document.getElementById("gate").style.display = "none";
+  render();
+}
+
+function lock() {
+  sessionStorage.removeItem("dashpw");
+  location.reload();
+}
+
+async function refresh() {
+  const pw = sessionStorage.getItem("dashpw");
+  if (!pw) return;
+  try {
+    payload = await fetchData(pw);
+    document.getElementById("error").textContent = "";
+  } catch (e) {
+    document.getElementById("error").textContent = "更新失敗:" + e.message;
+    return;
+  }
+  render();
+}
+
+function table(headers, rows) {
+  if (!rows.length) return '<div class="card empty">目前沒有資料</div>';
+  return `<table><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr>` +
+    rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
+}
+
+function render() {
+  const sel = document.getElementById("ccy");
+  const currencies = Object.keys(payload.currencies);
+  if (sel.options.length !== currencies.length) {
+    const prev = sel.value;
+    sel.innerHTML = currencies.map(c => `<option>${c}</option>`).join("");
+    if (currencies.includes(prev)) sel.value = prev;
+    sel.onchange = render;
+  }
+  const d = payload.currencies[sel.value || currencies[0]];
+  const err = document.getElementById("error");
+  err.textContent = d && d.error ? "此幣別資料讀取失敗:" + d.error : "";
+
+  if (d && !d.error) {
+    document.getElementById("balance").textContent = fmt(d.balance) + " " + d.currency;
+    document.getElementById("available").textContent = "閒置可掛出:" + fmt(d.available);
+    document.getElementById("lentTotal").textContent = fmt(d.lent.total);
+    document.getElementById("lentRate").textContent =
+      d.lent.total ? `加權 ${fmt(d.lent.weighted_rate_pct, 4)}%/日 · 年化 ${fmt(d.lent.apr_pct, 1)}%` : "";
+    document.getElementById("today").textContent = "+" + fmt(d.earnings.today, 4);
+    document.getElementById("d7").textContent = "近 7 日:+" + fmt(d.earnings.d7, 2);
+    document.getElementById("d30").textContent = "+" + fmt(d.earnings.d30, 2);
+    document.getElementById("estApr").textContent = "估算年化 " + fmt(d.earnings.est_apr_pct, 1) + "%";
+
+    document.getElementById("lentTable").innerHTML = table(
+      ["狀態", "金額", "日利率", "年化", "天數", "開始", "到期"],
+      d.lent.items.map(p => [
+        p.used ? '<span class="badge">生息中</span>' : '<span class="badge idle">已提供</span>',
+        fmt(p.amount), fmt(p.rate_pct, 4) + "%", fmt(p.apr_pct, 1) + "%",
+        p.period, ts(p.opened_ms), ts(p.expires_ms),
+      ]));
+
+    document.getElementById("offerTable").innerHTML = table(
+      ["掛單時間", "金額", "日利率", "年化", "天數"],
+      d.offers.map(o => [ts(o.created_ms), fmt(o.amount), fmt(o.rate_pct, 4) + "%",
+                         fmt(o.apr_pct, 1) + "%", o.period]));
+
+    const labels = d.earnings.daily.map(x => x.date.slice(5));
+    const values = d.earnings.daily.map(x => x.amount);
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById("chart"), {
+      type: "bar",
+      data: { labels, datasets: [{ data: values, backgroundColor: "#16a34a", borderRadius: 3 }] },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#94a3b8", maxTicksLimit: 15 }, grid: { display: false } },
+          y: { ticks: { color: "#94a3b8" }, grid: { color: "#2c3d52" } },
+        },
+      },
+    });
+  }
+
+  document.getElementById("runs").innerHTML = (payload.runs || []).map(r => `
+    <details class="run">
+      <summary>
+        <span>${r.ok ? "✅" : "❌"}</span>
+        <span class="runTime">${ts(r.ts_ms)}</span>
+        ${r.dry_run ? '<span class="badge dry">DRY RUN</span>' : ""}
+      </summary>
+      <pre>${esc(r.log || "(無輸出)")}</pre>
+    </details>`).join("") || '<div class="card empty">尚無執行紀錄</div>';
+
+  document.getElementById("updated").textContent = ts(payload.generated_ms);
+}
+
+document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });
+
+(async () => {
+  const pw = sessionStorage.getItem("dashpw");
+  if (pw) {
+    try {
+      payload = await fetchData(pw);
+      document.getElementById("gate").style.display = "none";
+      render();
+    } catch { sessionStorage.removeItem("dashpw"); }
+  }
+  setInterval(refresh, 300_000); // 每 5 分鐘自動更新
+})();
+</script>
+</body>
+</html>

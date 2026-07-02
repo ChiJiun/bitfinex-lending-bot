@@ -42,9 +42,19 @@ GitHub repo → Settings → Secrets and variables → Actions → New repositor
 
 repo → Actions → Bitfinex Lending Bot → **Run workflow**,勾選 `dry_run` 先跑一次,確認 log 顯示的掛單計畫合理,再取消勾選正式執行。之後排程就會自動跑。
 
-## 收益儀表板
+## 收益儀表板(GitHub Pages)
 
-在本機執行(資料直接來自 Bitfinex API,不經過第三方):
+網址:`https://chijiun.github.io/bitfinex-lending-bot/`
+
+機器人每輪跑完會把「帳戶狀態 + 執行 log」**加密**後發佈成 `docs/data.enc`(AES-256-GCM,密碼經 PBKDF2 衍生),網頁在**瀏覽器端**解密 — repo 雖然公開,但沒有密碼的人只能看到亂碼。
+
+- 密碼存在本機專案資料夾的 `.dashboard_password`(未上傳),同時設定在 repo Secret `DASHBOARD_PASSWORD`
+- 顯示內容:錢包總額、放貸中部位與利率、今日/7 日/30 日利息、每日利息圖表、掛單明細,以及**最近 50 次機器人執行 log**(含成功/失敗與 DRY RUN 標記)
+- 換密碼:更新 Secret `DASHBOARD_PASSWORD` 並同步改 `.dashboard_password`,下一輪執行後生效
+
+## 收益儀表板(本機版)
+
+不想開網頁也可以在本機執行(資料直接來自 Bitfinex API,不經過第三方):
 
 ```
 py dashboard.py

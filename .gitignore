@@ -1,3 +1,5 @@
 .env
+.dashboard_password
+bot_run.log
 __pycache__/
 *.pyc
