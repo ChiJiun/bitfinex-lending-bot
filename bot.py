@@ -44,7 +44,7 @@ def load_dotenv(path: Path) -> None:
     """讀取 .env(本機測試用),已存在的環境變數不覆蓋。"""
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -54,8 +54,9 @@ def load_dotenv(path: Path) -> None:
 
 class Bitfinex:
     def __init__(self, key: str, secret: str):
-        self.key = key
-        self.secret = secret.encode()
+        # 環境變數/Secrets 有時會混入 BOM 或空白,一律清掉
+        self.key = key.strip().lstrip("﻿")
+        self.secret = secret.strip().lstrip("﻿").encode()
         self.session = requests.Session()
         self._last_nonce = 0
 

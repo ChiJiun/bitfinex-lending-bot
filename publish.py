@@ -64,7 +64,7 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     bot.load_dotenv(bot.SCRIPT_DIR / ".env")
 
-    password = os.environ.get("DASHBOARD_PASSWORD", "")
+    password = os.environ.get("DASHBOARD_PASSWORD", "").strip().lstrip("﻿")
     key = os.environ.get("BFX_API_KEY", "")
     secret = os.environ.get("BFX_API_SECRET", "")
     if not password:
@@ -88,7 +88,7 @@ def main() -> int:
             "ts_ms": int(time.time() * 1000),
             "ok": os.environ.get("BOT_EXIT", "0") == "0",
             "dry_run": os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
-            "log": LOG_PATH.read_text(encoding="utf-8", errors="replace")[-MAX_LOG_CHARS:],
+            "log": LOG_PATH.read_text(encoding="utf-8-sig", errors="replace")[-MAX_LOG_CHARS:],
         })
         runs = runs[:MAX_RUNS]
 
