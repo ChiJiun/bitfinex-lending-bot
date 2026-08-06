@@ -53,7 +53,7 @@
   <div class="box">
     <div style="font-size:34px">🍃</div>
     <h1 style="font-size:18px">綠葉放貸儀表板</h1>
-    <p style="color:var(--muted);font-size:13px">資料已加密,請輸入儀表板密碼</p>
+    <p style="color:var(--muted);font-size:13px">資料已加密,請輸入儀表板密碼<br><span style="font-size:12px">輸入一次後這台裝置就會記住</span></p>
     <input id="pw" type="password" placeholder="密碼" autofocus>
     <div id="gateErr"></div>
     <button onclick="unlock()">解鎖</button>
@@ -64,6 +64,7 @@
   <h1>🍃 綠葉放貸儀表板</h1>
   <select id="ccy"></select>
   <button onclick="refresh()">重新整理</button>
+  <button onclick="copyLink()" title="複製免登入網址,存書籤或傳到手機">免登入連結</button>
   <button onclick="lock()" title="清除記住的密碼">鎖定</button>
 </header>
 <main>
@@ -121,6 +122,8 @@ async function fetchData(password) {
   }
 }
 
+const savedPw = () => localStorage.getItem("dashpw");
+
 async function unlock() {
   const pw = document.getElementById("pw").value;
   const err = document.getElementById("gateErr");
@@ -131,18 +134,26 @@ async function unlock() {
     err.textContent = e.message === "WRONG_PASSWORD" ? "密碼錯誤" : e.message;
     return;
   }
-  sessionStorage.setItem("dashpw", pw);
+  localStorage.setItem("dashpw", pw); // 記住密碼,下次開啟免輸入
   document.getElementById("gate").style.display = "none";
   render();
 }
 
 function lock() {
-  sessionStorage.removeItem("dashpw");
+  localStorage.removeItem("dashpw");
   location.reload();
 }
 
+// 複製一個內含密碼的免登入網址(存書籤或傳到手機用)
+function copyLink() {
+  const pw = savedPw();
+  if (!pw) return;
+  const link = location.origin + location.pathname + "#" + encodeURIComponent(pw);
+  navigator.clipboard.writeText(link).then(() => alert("免登入連結已複製!\n把它存成書籤,或傳到手機上打開即可免密碼進入。"));
+}
+
 async function refresh() {
-  const pw = sessionStorage.getItem("dashpw");
+  const pw = savedPw();
   if (!pw) return;
   try {
     payload = await fetchData(pw);
@@ -230,13 +241,17 @@ function render() {
 document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });
 
 (async () => {
-  const pw = sessionStorage.getItem("dashpw");
+  // 網址帶 #密碼 時自動解鎖,成功後把密碼從網址列移除並記住
+  const fromHash = location.hash ? decodeURIComponent(location.hash.slice(1)) : "";
+  const pw = fromHash || savedPw();
   if (pw) {
     try {
       payload = await fetchData(pw);
+      localStorage.setItem("dashpw", pw);
+      if (fromHash) history.replaceState(null, "", location.pathname);
       document.getElementById("gate").style.display = "none";
       render();
-    } catch { sessionStorage.removeItem("dashpw"); }
+    } catch { localStorage.removeItem("dashpw"); }
   }
   setInterval(refresh, 300_000); // 每 5 分鐘自動更新
 })();
