@@ -2,8 +2,8 @@ name: Bitfinex Lending Bot
 
 on:
   schedule:
-    # 每 30 分鐘跑一次(UTC)。公開 repo 分鐘數無上限,可改成 "*/10 * * * *"。
-    - cron: "*/30 * * * *"
+    # 每 15 分鐘跑一次(UTC)。repo 為公開,Actions 分鐘數無上限。
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:

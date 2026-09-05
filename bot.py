@@ -137,9 +137,16 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
     ticker = client.public(f"ticker/{symbol}")
     frr = float(ticker[T_FRR] or 0)
     ask = float(ticker[T_ASK] or 0)
-    base_rate_pct = max((ask or frr) * 100, float(cfg.get("min_daily_rate_pct", 0.0)))
+    # 以 FRR（市場基準利率）當錨。ask 是訂單簿最底層的殺價單，
+    # 跟著它掛等於當全市場最便宜的錢，會被瞬間吃掉且只拿到約半的 FRR。
+    floor_pct = float(cfg.get("min_daily_rate_pct", 0.0))
+    base_rate_pct = max(frr * 100, ask * 100, floor_pct)
+    anchor = "FRR" if frr >= ask else "最佳掛單"
+    if base_rate_pct <= floor_pct:
+        anchor = "利率地板"
     log(f"{currency}: FRR {frr * 100:.4f}%/日 (APR {frr * 36500:.1f}%),"
-        f" 最佳掛單利率 {ask * 100:.4f}%/日,階梯基準 {base_rate_pct:.4f}%/日")
+        f" 最佳掛單利率 {ask * 100:.4f}%/日,"
+        f" 階梯基準 {base_rate_pct:.4f}%/日 (APR {base_rate_pct * 365:.1f}%, 錨定{anchor})")
 
     # 取消掛超過 stale_minutes 未成交的舊單
     now_ms = time.time() * 1000
