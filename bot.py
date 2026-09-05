@@ -113,9 +113,11 @@ def build_ladder(available: float, cfg: dict, base_rate_pct: float,
 
     if available < min_size:
         return []
-    n = min(steps, int(available // min_size)) or 1
-    if max_size:
+    n = min(steps, int(available // min_size))
+    if max_size:  # 資金大時拆更多筆,讓每筆不超過單筆上限
         n = max(n, math.ceil(available / max_size))
+    # 無論如何每筆都不能低於交易所最小掛單額
+    n = max(1, min(n, int(available // min_size)))
     chunk = available / n
 
     offers = []
