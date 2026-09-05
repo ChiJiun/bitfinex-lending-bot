@@ -98,8 +98,13 @@ def pick_period(rate_pct: float, rules: list[dict]) -> int:
     return 2
 
 
-def build_ladder(available: float, cfg: dict, base_rate_pct: float) -> list[tuple[float, float, int]]:
-    """把可用資金拆成階梯掛單,回傳 [(金額, 日利率%, 天數), ...],利率由低到高。"""
+def build_ladder(available: float, cfg: dict, base_rate_pct: float,
+                 top_rate_pct: float = 0.0) -> list[tuple[float, float, int]]:
+    """把可用資金拆成階梯掛單,回傳 [(金額, 日利率%, 天數), ...],利率由低到高。
+
+    給了 top_rate_pct 就把階梯線性鋪在 base..top 之間(貼合實際成交帶);
+    否則退回以 ladder_step_pct 逐層遞增。
+    """
     min_size = float(cfg.get("min_offer_size", 150))
     max_size = float(cfg.get("max_offer_size", 0)) or None
     steps = max(1, int(cfg.get("num_ladder_steps", 4)))
@@ -116,10 +121,37 @@ def build_ladder(available: float, cfg: dict, base_rate_pct: float) -> list[tupl
     offers = []
     for i in range(n):
         rung = i * steps // n  # 0..steps-1,把 n 筆平均映射到階梯上
-        rate = max(base_rate_pct * (1 + step_pct * rung), min_rate)
+        if top_rate_pct > base_rate_pct and steps > 1:
+            rate = base_rate_pct + (top_rate_pct - base_rate_pct) * rung / (steps - 1)
+        else:
+            rate = base_rate_pct * (1 + step_pct * rung)
+        rate = max(rate, min_rate)
         amount = chunk if i < n - 1 else available - chunk * (n - 1)
         offers.append((round(amount, 6), rate, pick_period(rate, cfg.get("period_rules", []))))
     return offers
+
+
+def market_band(client: Bitfinex, symbol: str, low_pct: float, high_pct: float) -> tuple[float, float]:
+    """全市場最近成交利率的分位區間,即「現在確實借得出去的價格帶」。
+
+    ticker 的 FRR 是已提供資金的加權平均(含過去鎖倉的長天期高利單),通常
+    高於當下成交價,掛在那裡不會成交;ask 則是訂單簿最底層的殺價單,掛在
+    那裡等於當全市場最便宜的錢。兩者都不適合當基準。
+
+    階梯直接鋪在這個實際成交帶上,所以市場窄幅時階梯自動收窄(每層都掛得掉),
+    行情波動、成交價拉開時階梯自動變寬(高層才有機會吃到尖峰)。
+    取不到成交紀錄時回傳 (0, 0),由呼叫端退回訂單簿。
+    """
+    try:
+        trades = client.public(f"trades/{symbol}/hist?limit=1000")
+    except Exception as exc:  # noqa: BLE001 — 公開行情失敗不該中斷放貸
+        log(f"{symbol}: 取成交紀錄失敗,改用訂單簿 — {exc}")
+        return 0.0, 0.0
+    rates = sorted(abs(float(t[3])) for t in trades)
+    if not rates:
+        return 0.0, 0.0
+    at = lambda q: rates[min(len(rates) - 1, int(len(rates) * q / 100))]
+    return at(low_pct), at(high_pct)
 
 
 def funding_available(client: Bitfinex, currency: str) -> float:
@@ -137,16 +169,26 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
     ticker = client.public(f"ticker/{symbol}")
     frr = float(ticker[T_FRR] or 0)
     ask = float(ticker[T_ASK] or 0)
-    # 以 FRR（市場基準利率）當錨。ask 是訂單簿最底層的殺價單，
-    # 跟著它掛等於當全市場最便宜的錢，會被瞬間吃掉且只拿到約半的 FRR。
+
+    # 錨定「全市場實際成交價」的成交量加權均價。
+    # 不能用 ask(訂單簿最低的殺價單,掛那裡等於當最便宜的錢,只拿到約半價),
+    # 也不能用 FRR(已提供資金的加權平均,含過去鎖倉的高利長單,通常高於當下
+    # 成交價 — 掛在那裡根本不會成交)。
+    low, high = market_band(client, symbol,
+                            float(cfg.get("market_anchor_percentile", 25)),
+                            float(cfg.get("market_top_percentile", 90)))
     floor_pct = float(cfg.get("min_daily_rate_pct", 0.0))
-    base_rate_pct = max(frr * 100, ask * 100, floor_pct)
-    anchor = "FRR" if frr >= ask else "最佳掛單"
+    if low:
+        base_rate_pct, top_rate_pct, anchor = max(low * 100, floor_pct), high * 100, "成交帶"
+    else:  # 成交紀錄取不到時退回訂單簿
+        base_rate_pct, top_rate_pct, anchor = max(ask * 100, floor_pct), 0.0, "最佳掛單"
     if base_rate_pct <= floor_pct:
         anchor = "利率地板"
     log(f"{currency}: FRR {frr * 100:.4f}%/日 (APR {frr * 36500:.1f}%),"
-        f" 最佳掛單利率 {ask * 100:.4f}%/日,"
-        f" 階梯基準 {base_rate_pct:.4f}%/日 (APR {base_rate_pct * 365:.1f}%, 錨定{anchor})")
+        f" 最佳掛單 {ask * 100:.4f}%/日,"
+        f" 成交帶 {low * 100:.4f}~{high * 100:.4f}%/日,"
+        f" 階梯 {base_rate_pct:.4f}~{max(top_rate_pct, base_rate_pct):.4f}%/日"
+        f" (APR {base_rate_pct * 365:.1f}~{max(top_rate_pct, base_rate_pct) * 365:.1f}%, 錨定{anchor})")
 
     # 取消掛超過 stale_minutes 未成交的舊單
     now_ms = time.time() * 1000
@@ -168,7 +210,7 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
         log(f"{currency}: (DRY_RUN 未實際取消,以下餘額不含被舊掛單鎖住的資金)")
     log(f"{currency}: 可掛出資金 {available:.2f}")
 
-    ladder = build_ladder(available, cfg, base_rate_pct)
+    ladder = build_ladder(available, cfg, base_rate_pct, top_rate_pct)
     if not ladder:
         log(f"{currency}: 資金不足最小掛單額 {cfg.get('min_offer_size', 150)},本輪不掛單")
         return

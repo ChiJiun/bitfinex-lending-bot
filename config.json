@@ -1,5 +1,5 @@
 {
-  "_說明": "所有利率單位都是「每日利率 %」。0.02 = 0.02%/日,約年化 7.3%。階梯基準錨定 FRR(市場基準利率),不是訂單簿最低價。鎖倉門檻依 2026-09 近 30 天 fUSD 的 FRR 分布校準(中位 0.0197、90分位 0.0260、月高 0.0307):平常維持 2 天短期保持彈性,只有利率被推到異常高檔(≥0.032 鎖 30 天、≥0.045 鎖 120 天)才鎖倉。",
+  "_說明": "所有利率單位都是「每日利率 %」。0.02 = 0.02%/日,約年化 7.3%。階梯基準錨定「全市場實際成交均價」——不是訂單簿最低價(太低,等於賤賣),也不是 ticker 的 FRR(含過去鎖倉高利長單,通常高於當下成交價,掛上去不會成交)。鎖倉門檻依近 30 天 fUSD 成交分布校準:平常 2 天保持彈性,只有利率被推到異常高檔(≥0.032 鎖 30 天、≥0.045 鎖 120 天)才鎖倉。",
   "stale_offer_minutes": 30,
   "currencies": {
     "USD": {
@@ -7,7 +7,6 @@
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "ladder_step_pct": 5,
       "min_daily_rate_pct": 0.015,
       "reserve_amount": 0,
       "period_rules": [
@@ -23,14 +22,16 @@
           "min_daily_rate_pct": 0.0,
           "period_days": 2
         }
-      ]
+      ],
+      "market_anchor_percentile": 25,
+      "market_top_percentile": 90,
+      "ladder_step_pct": 3
     },
     "UST": {
       "enabled": false,
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "ladder_step_pct": 5,
       "min_daily_rate_pct": 0.015,
       "reserve_amount": 0,
       "period_rules": [
@@ -46,7 +47,10 @@
           "min_daily_rate_pct": 0.0,
           "period_days": 2
         }
-      ]
+      ],
+      "market_anchor_percentile": 25,
+      "market_top_percentile": 90,
+      "ladder_step_pct": 3
     }
   }
 }
