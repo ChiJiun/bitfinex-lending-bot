@@ -34,6 +34,8 @@ T_FRR, T_BID, T_ASK = 0, 1, 4
 O_ID, O_MTS_CREATED, O_AMOUNT, O_RATE, O_PERIOD = 0, 2, 4, 14, 15
 # wallet 欄位索引 (https://docs.bitfinex.com/reference/rest-auth-wallets)
 W_TYPE, W_CURRENCY, W_BALANCE, W_AVAILABLE = 0, 1, 2, 4
+# funding credit/loan 欄位索引 (https://docs.bitfinex.com/reference/rest-auth-funding-credits)
+C_ID, C_AMOUNT, C_RATE, C_PERIOD, C_RENEW = 0, 5, 11, 12, 18
 
 
 def log(msg: str) -> None:
@@ -156,6 +158,28 @@ def market_band(client: Bitfinex, symbol: str, low_pct: float, high_pct: float) 
     return at(low_pct), at(high_pct)
 
 
+def renew_rate(client: Bitfinex, symbol: str, cfg: dict) -> float:
+    """我們最近實際成交過、且高於續借門檻的最佳日利率(%)。
+
+    Bitfinex 沒有可用的「單筆放貸自動續借」開關 —— auth/w/funding/keep 對已被
+    借走的 credit 回報 SUCCESS 但 RENEW 欄位完全沒變(空操作),不能依賴。
+    所以續借由機器人自己做:高利率的放貸到期回流後,用當初那個好利率重新
+    掛出(並在下面給它較長的等待時間);低利率的就直接依市場重新定價。
+    """
+    threshold = float(cfg.get("renew_min_daily_rate_pct", 0))
+    if threshold <= 0:
+        return 0.0
+    try:
+        trades = client.auth(f"auth/r/funding/trades/{symbol}/hist", {"limit": 250})
+    except Exception as exc:  # noqa: BLE001 — 查不到就退回純市場定價
+        log(f"{symbol}: 取自己的成交紀錄失敗,略過續借 — {exc}")
+        return 0.0
+    cutoff = time.time() * 1000 - float(cfg.get("renew_lookback_days", 7)) * 86_400_000
+    rates = [float(t[5]) * 100 for t in trades
+             if t[2] >= cutoff and float(t[5]) * 100 >= threshold]
+    return max(rates) if rates else 0.0
+
+
 def funding_available(client: Bitfinex, currency: str) -> float:
     for w in client.auth("auth/r/wallets"):
         if w[W_TYPE] == "funding" and w[W_CURRENCY] == currency:
@@ -195,9 +219,15 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
     # 取消掛超過 stale_minutes 未成交的舊單
     now_ms = time.time() * 1000
     cancelled = 0
+    renew_threshold = float(cfg.get("renew_min_daily_rate_pct", 0))
+    patient_minutes = float(cfg.get("high_rate_stale_minutes", stale_minutes))
     for offer in client.auth(f"auth/r/funding/offers/{symbol}"):
         age_min = (now_ms - offer[O_MTS_CREATED]) / 60_000
-        if age_min < stale_minutes:
+        # 高利率的單多等一會兒(等尖峰買家),低利率的照常重新定價
+        limit = (patient_minutes
+                 if renew_threshold and float(offer[O_RATE]) * 100 >= renew_threshold
+                 else stale_minutes)
+        if age_min < limit:
             continue
         log(f"{currency}: 取消舊掛單 #{offer[O_ID]} — {float(offer[O_AMOUNT]):.2f} @ "
             f"{float(offer[O_RATE]) * 100:.4f}%/日,已掛 {age_min:.0f} 分鐘")
@@ -211,6 +241,12 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
     if dry_run and cancelled:
         log(f"{currency}: (DRY_RUN 未實際取消,以下餘額不含被舊掛單鎖住的資金)")
     log(f"{currency}: 可掛出資金 {available:.2f}")
+
+    renew = renew_rate(client, symbol, cfg)
+    if renew > top_rate_pct:
+        log(f"{currency}: 續借 — 沿用近期成交過的較佳利率 {renew:.4f}%/日 "
+            f"(APR {renew * 365:.1f}%) 當階梯頂端")
+        top_rate_pct = renew
 
     ladder = build_ladder(available, cfg, base_rate_pct, top_rate_pct)
     if not ladder:

@@ -7,7 +7,7 @@
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "min_daily_rate_pct": 0.015,
+      "min_daily_rate_pct": 0.018,
       "reserve_amount": 0,
       "period_rules": [
         {
@@ -25,14 +25,17 @@
       ],
       "market_anchor_percentile": 25,
       "market_top_percentile": 90,
-      "ladder_step_pct": 3
+      "ladder_step_pct": 3,
+      "renew_min_daily_rate_pct": 0.02,
+      "renew_lookback_days": 7,
+      "high_rate_stale_minutes": 240
     },
     "UST": {
       "enabled": false,
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "min_daily_rate_pct": 0.015,
+      "min_daily_rate_pct": 0.018,
       "reserve_amount": 0,
       "period_rules": [
         {
@@ -50,7 +53,10 @@
       ],
       "market_anchor_percentile": 25,
       "market_top_percentile": 90,
-      "ladder_step_pct": 3
+      "ladder_step_pct": 3,
+      "renew_min_daily_rate_pct": 0.02,
+      "renew_lookback_days": 7,
+      "high_rate_stale_minutes": 240
     }
   }
 }
