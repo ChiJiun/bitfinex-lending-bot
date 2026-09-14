@@ -34,6 +34,20 @@
   .badge.idle { background: #334155; color: var(--muted); }
   .badge.dry { background: #78350f; color: #fcd34d; }
   footer { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+  /* 參數設定 */
+  .ccyBox { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .ccyBox h3 { margin: 0 0 12px; font-size: 15px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 18px; }
+  .field { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .field label { flex: 1; color: var(--muted); }
+  .field input[type=number] { width: 110px; text-align: right; }
+  .field .apr { color: var(--green); font-size: 12px; width: 62px; text-align: right; }
+  .note { color: var(--muted); font-size: 12px; margin: 6px 0 14px; line-height: 1.7; }
+  #cfgJson { width: 100%; height: 200px; font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+             background: #0b1120; color: #a5b4c8; border: 1px solid #334155; border-radius: 10px; padding: 12px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .actions a { text-decoration: none; }
+  .primary { background: var(--green); border: none; color: #fff; font-weight: 600; }
   /* 密碼解鎖畫面 */
   #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; }
   #gate .box { background: var(--card); border-radius: 16px; padding: 32px; width: 320px; text-align: center; }
@@ -86,6 +100,23 @@
   <section>
     <h2>掛單中(等待成交)</h2>
     <div id="offerTable"></div>
+  </section>
+  <section>
+    <h2>參數設定</h2>
+    <div class="note">
+      改動下方欄位會即時產生新的 <code>config.json</code>。按「複製設定」後點「在 GitHub 編輯」,
+      在編輯器裡全選貼上並 Commit,下一輪(15 分鐘內)機器人就會套用。<br>
+      這個頁面<b>不會、也不能</b>直接改動 repo —— 寫入權限一律走你自己的 GitHub 登入,
+      詳見 README「為什麼設定不直接從網頁存檔」。
+    </div>
+    <div id="cfgForm"></div>
+    <textarea id="cfgJson" readonly spellcheck="false"></textarea>
+    <div class="actions">
+      <button class="primary" onclick="copyCfg()">複製設定</button>
+      <a href="https://github.com/ChiJiun/bitfinex-lending-bot/edit/master/config.json"
+         target="_blank" rel="noopener"><button>在 GitHub 編輯 ↗</button></a>
+      <button onclick="renderSettings(true)">還原成目前設定</button>
+    </div>
   </section>
   <section>
     <h2>機器人執行紀錄(最近 50 次)</h2>
@@ -235,7 +266,80 @@ function render() {
       <pre>${esc(r.log || "(無輸出)")}</pre>
     </details>`).join("") || '<div class="card empty">尚無執行紀錄</div>';
 
+  renderSettings(false);
   document.getElementById("updated").textContent = ts(payload.generated_ms);
+}
+
+const GLOBAL_FIELDS = [
+  { key: "stale_offer_minutes", label: "一般掛單多久重新定價(分鐘)", min: 5, step: 5 },
+];
+const CCY_FIELDS = [
+  { key: "enabled", label: "啟用此幣別", type: "bool" },
+  { key: "max_lend_amount", label: "最大放貸總額(0 = 不限)", min: 0, step: 100 },
+  { key: "reserve_amount", label: "保留不放貸的金額", min: 0, step: 50 },
+  { key: "min_daily_rate_pct", label: "利率地板", type: "rate", min: 0, step: 0.001 },
+  { key: "renew_min_daily_rate_pct", label: "續借門檻利率", type: "rate", min: 0, step: 0.001 },
+  { key: "high_rate_stale_minutes", label: "高利率單等待(分鐘)", min: 5, step: 30 },
+  { key: "renew_lookback_days", label: "續借回看天數", min: 1, step: 1 },
+  { key: "market_anchor_percentile", label: "階梯下界(成交分位)", min: 0, max: 100, step: 5 },
+  { key: "market_top_percentile", label: "階梯上界(成交分位)", min: 0, max: 100, step: 5 },
+  { key: "num_ladder_steps", label: "階梯層數", min: 1, max: 20, step: 1 },
+  { key: "min_offer_size", label: "單筆最小金額", min: 150, step: 10 },
+  { key: "max_offer_size", label: "單筆最大金額", min: 150, step: 500 },
+];
+
+function fieldHtml(f, path, value) {
+  const id = "f_" + path.replace(/\W/g, "_");
+  if (f.type === "bool")
+    return `<div class="field"><label for="${id}">${f.label}</label>
+      <input type="checkbox" id="${id}" data-path="${path}" ${value ? "checked" : ""}></div>`;
+  const attrs = [`min="${f.min ?? 0}"`, `step="${f.step ?? 1}"`, f.max != null ? `max="${f.max}"` : ""].join(" ");
+  const apr = f.type === "rate" ? `<span class="apr" id="${id}_apr"></span>` : "";
+  return `<div class="field"><label for="${id}">${f.label}</label>
+    <input type="number" id="${id}" data-path="${path}" data-rate="${f.type === "rate" ? 1 : 0}"
+           value="${value ?? 0}" ${attrs}>${apr}</div>`;
+}
+
+function renderSettings(reset) {
+  const cfg = payload && payload.config;
+  const host = document.getElementById("cfgForm");
+  if (!cfg) { host.innerHTML = '<div class="card empty">這份資料還沒帶設定 — 等機器人下一輪跑完就會出現</div>'; return; }
+  if (host.dataset.built && !reset) return;
+  host.dataset.built = "1";
+
+  let html = '<div class="ccyBox"><h3>全域</h3><div class="fields">' +
+    GLOBAL_FIELDS.map(f => fieldHtml(f, f.key, cfg[f.key])).join("") + "</div></div>";
+  for (const [ccy, c] of Object.entries(cfg.currencies || {}))
+    html += `<div class="ccyBox"><h3>${ccy}</h3><div class="fields">` +
+      CCY_FIELDS.map(f => fieldHtml(f, `currencies.${ccy}.${f.key}`, c[f.key])).join("") + "</div></div>";
+  host.innerHTML = html;
+  host.querySelectorAll("input").forEach(el => el.addEventListener("input", buildCfg));
+  buildCfg();
+}
+
+function buildCfg() {
+  const cfg = JSON.parse(JSON.stringify(payload.config));
+  document.querySelectorAll("#cfgForm input").forEach(el => {
+    const keys = el.dataset.path.split(".");
+    let o = cfg;
+    for (let i = 0; i < keys.length - 1; i++) o = o[keys[i]];
+    const last = keys[keys.length - 1];
+    if (el.type === "checkbox") { o[last] = el.checked; return; }
+    const v = Number(el.value);
+    o[last] = Number.isFinite(v) ? v : o[last];
+    if (el.dataset.rate === "1") {
+      const tag = document.getElementById(el.id + "_apr");
+      if (tag) tag.textContent = (v * 365).toFixed(1) + "%";
+    }
+  });
+  document.getElementById("cfgJson").value = JSON.stringify(cfg, null, 2);
+}
+
+function copyCfg() {
+  const ta = document.getElementById("cfgJson");
+  navigator.clipboard.writeText(ta.value).then(
+    () => alert("設定已複製!\n點「在 GitHub 編輯」,在編輯器中全選(Ctrl+A)貼上,然後 Commit。"),
+    () => { ta.removeAttribute("readonly"); ta.select(); alert("請手動複製上方內容"); });
 }
 
 document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });

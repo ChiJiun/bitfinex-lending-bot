@@ -148,7 +148,8 @@ n = max(1, min(n, 可用資金 ÷ min_offer_size))          ← 防呆:上限誤
 | `renew_min_daily_rate_pct` | 0.020 | 高於此利率的掛單享有續借與耐心等待 |
 | `renew_lookback_days` | 7 | 續借利率往回看幾天的自身成交紀錄 |
 | `high_rate_stale_minutes` | 240 | 高利率掛單的等待時間 |
-| `reserve_amount` | 0 | 保留不掛出的金額 |
+| `max_lend_amount` | 0 | **最大放貸總額**(生息中 + 掛單中),達到就停止新增。0 = 不限 |
+| `reserve_amount` | 0 | 保留在錢包不掛出的金額 |
 | `period_rules` | 見上 | 利率 → 放貸天數對照 |
 | `ladder_step_pct` | 3 | **僅**在取不到成交紀錄、退回訂單簿定價時使用的每層遞增幅度 |
 
@@ -159,8 +160,36 @@ n = max(1, min(n, 可用資金 ÷ min_offer_size))          ← 防呆:上限誤
 | 更快成交、減少空轉 | `market_anchor_percentile` 調低(如 10)、`high_rate_stale_minutes` 調低 |
 | 更貪心等高利率 | `market_top_percentile` 調高、`renew_min_daily_rate_pct` 調低 |
 | 拒絕低利率行情 | `min_daily_rate_pct` 調高(但過高會大量空轉,參考「二」的回測表) |
+| 限制總投入金額 | `max_lend_amount`(例如只想放 3000,其餘留在錢包) |
 | 留一筆錢不放貸 | `reserve_amount` |
 | 加開幣別 | 把 `UST` 的 `enabled` 改 `true`,或依相同格式新增 |
+
+## 從儀表板修改參數
+
+儀表板有「**參數設定**」區塊,可以用表單調整上表的欄位(利率欄位會即時換算成年化),
+下方會同步產生新的 `config.json`。流程:
+
+1. 改好欄位 → 按「**複製設定**」
+2. 按「**在 GitHub 編輯**」開啟
+   [config.json 編輯器](https://github.com/ChiJiun/bitfinex-lending-bot/edit/master/config.json)
+3. 全選(Ctrl+A)貼上 → Commit
+4. 下一輪(15 分鐘內)機器人自動套用;執行 log 會顯示新參數的效果
+
+表單只會動它認得的欄位,`period_rules` 與說明文字原樣保留。
+
+### 為什麼設定不直接從網頁存檔
+
+技術上做得到 —— 讓網頁拿一個 GitHub Token 直接 commit。**但這條路會打穿整個安全模型**:
+
+- GitHub Token 要能改 `config.json`,就必須有 repo 的 `contents: write` 權限
+- 有了那個權限,就能改 `bot.py`
+- 而 `bot.py` 在 GitHub Actions 裡是帶著 `BFX_API_KEY` / `BFX_API_SECRET` 執行的
+
+也就是說,**一個放在公開網頁上的 Token 若外流,等於交出你的 Bitfinex 放貸帳戶**。
+GitHub 的細粒度 Token 也無法只授權單一檔案,擋不住這條路徑。
+
+所以設計上刻意讓寫入權限**只走你自己的 GitHub 登入**:網頁負責把參數算好、驗證、產生 JSON,
+真正的「存檔」由你在 GitHub 自己的介面按下 Commit。手機上同樣可用。
 
 ---
 

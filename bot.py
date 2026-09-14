@@ -180,6 +180,17 @@ def renew_rate(client: Bitfinex, symbol: str, cfg: dict) -> float:
     return max(rates) if rates else 0.0
 
 
+def deployed_amount(client: Bitfinex, symbol: str) -> float:
+    """已投入放貸的總額:生息中的部位 + 還掛在市場上未成交的單。"""
+    total = 0.0
+    for kind in ("credits", "loans"):
+        for pos in client.auth(f"auth/r/funding/{kind}/{symbol}"):
+            total += abs(float(pos[C_AMOUNT] or 0))
+    for offer in client.auth(f"auth/r/funding/offers/{symbol}"):
+        total += abs(float(offer[O_AMOUNT] or 0))
+    return total
+
+
 def funding_available(client: Bitfinex, currency: str) -> float:
     for w in client.auth("auth/r/wallets"):
         if w[W_TYPE] == "funding" and w[W_CURRENCY] == currency:
@@ -238,6 +249,14 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
         time.sleep(2)  # 等取消後的資金回到可用餘額
 
     available = funding_available(client, currency) - float(cfg.get("reserve_amount", 0))
+    max_lend = float(cfg.get("max_lend_amount", 0))
+    if max_lend > 0:  # 總放貸上限:已投入的加上這輪要掛的,不超過這個數字
+        deployed = deployed_amount(client, symbol)
+        room = max(0.0, max_lend - deployed)
+        if room < available:
+            log(f"{currency}: 放貸上限 {max_lend:.2f},已投入 {deployed:.2f},"
+                f"本輪最多再掛 {room:.2f}(其餘留在錢包不動)")
+            available = room
     if dry_run and cancelled:
         log(f"{currency}: (DRY_RUN 未實際取消,以下餘額不含被舊掛單鎖住的資金)")
     log(f"{currency}: 可掛出資金 {available:.2f}")

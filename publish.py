@@ -108,6 +108,7 @@ def main() -> int:
         "generated_ms": int(time.time() * 1000),
         "currencies": currencies,
         "runs": runs,
+        "config": config,  # 讓儀表板的設定頁顯示機器人實際在跑的參數
     }
     DOCS.mkdir(exist_ok=True)
     ENC_PATH.write_text(encrypt(password, payload), encoding="utf-8")

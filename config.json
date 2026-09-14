@@ -28,7 +28,8 @@
       "ladder_step_pct": 3,
       "renew_min_daily_rate_pct": 0.02,
       "renew_lookback_days": 7,
-      "high_rate_stale_minutes": 240
+      "high_rate_stale_minutes": 240,
+      "max_lend_amount": 0
     },
     "UST": {
       "enabled": false,
@@ -56,7 +57,8 @@
       "ladder_step_pct": 3,
       "renew_min_daily_rate_pct": 0.02,
       "renew_lookback_days": 7,
-      "high_rate_stale_minutes": 240
+      "high_rate_stale_minutes": 240,
+      "max_lend_amount": 0
     }
   }
 }
