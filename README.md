@@ -212,7 +212,7 @@ GitHub repo → Settings → Secrets and variables → Actions → New repositor
 |---|---|
 | `BFX_API_KEY` | API Key |
 | `BFX_API_SECRET` | API Secret |
-| `DASHBOARD_PASSWORD` | 儀表板密碼(見下方) |
+| `DASHBOARD_PASSWORD` | 設定區密碼(看板本身不需要密碼,見下方) |
 
 > ⚠️ 用 PowerShell 管線寫入 Secrets 會在值前面加上看不見的 BOM,導致 API 簽名失敗。
 > 請直接在 GitHub 網頁貼上,或用 Bash。機器人本身已會自動清除金鑰開頭的 BOM 與空白。
@@ -233,19 +233,44 @@ repo → Actions → Bitfinex Lending Bot → **Run workflow**,勾選 `dry_run` 
 
 # 收益儀表板
 
-## GitHub Pages 版
-
 網址:<https://chijiun.github.io/bitfinex-lending-bot/>
 
-機器人每輪跑完會把「帳戶狀態 + 執行 log」**加密**後發佈成 `docs/data.enc`
-(AES-256-GCM,密碼經 PBKDF2 300k 次衍生),網頁在**瀏覽器端**解密 —— repo 雖然公開,
-沒有密碼的人只能看到亂碼。
+機器人每輪跑完會把「帳戶狀態 + 設定 + 執行 log」發佈成 `docs/data.json`,
+網頁直接讀取顯示,**看板本身不需要密碼**。
 
-- 密碼存在本機專案資料夾的 `.dashboard_password`(未上傳),同時設定在 Secret `DASHBOARD_PASSWORD`
-- **只需輸入一次**,之後這台裝置永久記住;點「免登入連結」可複製含密碼的網址存書籤或傳到手機
-- 顯示:錢包總額、放貸中部位與利率、今日/7 日/30 日利息、每日利息圖表、掛單明細,
-  以及**最近 50 次機器人執行 log**(含成功/失敗與 DRY RUN 標記)
-- 換密碼:更新 Secret 並同步改 `.dashboard_password`,下一輪執行後生效
+> ⚠️ **這份資料是公開的**。repo 是公開的、GitHub Pages 也是,任何人打開網址就能看到
+> 你的錢包餘額、每日利息、放貸部位與完整執行 log,而且可能被搜尋引擎索引。
+> 這是刻意選擇的設計(看板公開、只有設定區要密碼)。
+> 想改回全站加密請見下方「改回加密看板」。
+
+顯示內容:錢包總額、放貸中部位與利率、今日/7 日/30 日利息、每日利息圖表、掛單明細,
+以及最近 50 次機器人執行 log(含成功/失敗與 DRY RUN 標記)。每 5 分鐘自動更新。
+
+## 設定區的密碼
+
+「參數設定」區塊要輸入密碼才會展開。比對方式:
+
+1. workflow 用 Secret `DASHBOARD_PASSWORD` 算出 PBKDF2-HMAC-SHA256(300k 次 + 隨機 salt)雜湊
+2. 雜湊隨 `data.json` 一起發佈(**密碼本身不會出現在任何檔案裡**)
+3. 網頁把你輸入的密碼用同樣參數算一次,比對雜湊是否相同
+
+解鎖狀態記在 sessionStorage,關閉分頁就失效。密碼存在本機的 `.dashboard_password`(未上傳)。
+
+**這道鎖只是防手滑,不是安全機制**:
+
+- 雜湊是公開的,所以 `DASHBOARD_PASSWORD` 必須夠長夠亂(預設是 20 字元隨機字串),
+  否則會被離線暴力破解
+- 檢查只在瀏覽器端執行,開 DevTools 就能繞過
+
+但這不要緊 —— **設定頁本身不會、也不能改動 repo**。它只是產生一段 JSON 文字,
+真正的寫入必須由你在 GitHub 按 Commit,那道關卡才是真正的權限控制。
+
+## 改回加密看板
+
+若之後想讓看板重新需要密碼才能看:把 `publish.py` 改回用 `DASHBOARD_PASSWORD`
+做 AES-256-GCM 加密寫出 `data.enc`,前端改成解密後再渲染
+(可從 git 歷史 `git log --oneline -- publish.py docs/index.html` 取回舊版)。
+注意:**已經推上公開 repo 的明文資料會永久留在 git 歷史裡**,改回加密不會抹除。
 
 ## 本機版
 
@@ -253,7 +278,8 @@ repo → Actions → Bitfinex Lending Bot → **Run workflow**,勾選 `dry_run` 
 py dashboard.py
 ```
 
-自動開啟 <http://localhost:8899>,資料直接來自 Bitfinex API、不經過第三方,每 60 秒更新。
+自動開啟 <http://localhost:8899>,資料直接來自 Bitfinex API、不經過第三方、不對外公開,
+每 60 秒更新。
 
 ---
 

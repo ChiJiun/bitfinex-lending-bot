@@ -48,12 +48,9 @@
   .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
   .actions a { text-decoration: none; }
   .primary { background: var(--green); border: none; color: #fff; font-weight: 600; }
-  /* 密碼解鎖畫面 */
-  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; }
-  #gate .box { background: var(--card); border-radius: 16px; padding: 32px; width: 320px; text-align: center; }
-  #gate input { width: 100%; margin: 14px 0; text-align: center; }
-  #gate button { width: 100%; background: var(--green); border: none; font-weight: 600; }
-  #gateErr { color: #f87171; font-size: 13px; min-height: 18px; }
+  #cfgLock { background: var(--card); border-radius: 12px; padding: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #cfgLock input { width: 200px; }
+  #cfgErr { color: #f87171; font-size: 13px; }
   /* 執行紀錄 */
   details.run { background: var(--card); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
   details.run summary { padding: 12px 16px; cursor: pointer; display: flex; gap: 10px; align-items: center; font-size: 14px; list-style: none; }
@@ -63,23 +60,10 @@
 </style>
 </head>
 <body>
-<div id="gate">
-  <div class="box">
-    <div style="font-size:34px">🍃</div>
-    <h1 style="font-size:18px">綠葉放貸儀表板</h1>
-    <p style="color:var(--muted);font-size:13px">資料已加密,請輸入儀表板密碼<br><span style="font-size:12px">輸入一次後這台裝置就會記住</span></p>
-    <input id="pw" type="password" placeholder="密碼" autofocus>
-    <div id="gateErr"></div>
-    <button onclick="unlock()">解鎖</button>
-  </div>
-</div>
-
 <header>
   <h1>🍃 綠葉放貸儀表板</h1>
   <select id="ccy"></select>
   <button onclick="refresh()">重新整理</button>
-  <button onclick="copyLink()" title="複製免登入網址,存書籤或傳到手機">免登入連結</button>
-  <button onclick="lock()" title="清除記住的密碼">鎖定</button>
 </header>
 <main>
   <div id="error"></div>
@@ -103,19 +87,26 @@
   </section>
   <section>
     <h2>參數設定</h2>
-    <div class="note">
-      改動下方欄位會即時產生新的 <code>config.json</code>。按「複製設定」後點「在 GitHub 編輯」,
-      在編輯器裡全選貼上並 Commit,下一輪(15 分鐘內)機器人就會套用。<br>
-      這個頁面<b>不會、也不能</b>直接改動 repo —— 寫入權限一律走你自己的 GitHub 登入,
-      詳見 README「為什麼設定不直接從網頁存檔」。
+    <div id="cfgLock">
+      <span>🔒 修改參數需要密碼</span>
+      <input id="cfgPw" type="password" placeholder="設定密碼">
+      <button class="primary" onclick="unlockSettings()">解鎖</button>
+      <span id="cfgErr"></span>
     </div>
-    <div id="cfgForm"></div>
-    <textarea id="cfgJson" readonly spellcheck="false"></textarea>
-    <div class="actions">
-      <button class="primary" onclick="copyCfg()">複製設定</button>
-      <a href="https://github.com/ChiJiun/bitfinex-lending-bot/edit/master/config.json"
-         target="_blank" rel="noopener"><button>在 GitHub 編輯 ↗</button></a>
-      <button onclick="renderSettings(true)">還原成目前設定</button>
+    <div id="cfgPanel" hidden>
+      <div class="note">
+        改動下方欄位會即時產生新的 <code>config.json</code>。按「複製設定」後點「在 GitHub 編輯」,
+        在編輯器裡全選貼上並 Commit,下一輪(15 分鐘內)機器人就會套用。<br>
+        這個頁面<b>不會、也不能</b>直接改動 repo —— 寫入權限一律走你自己的 GitHub 登入。
+      </div>
+      <div id="cfgForm"></div>
+      <textarea id="cfgJson" readonly spellcheck="false"></textarea>
+      <div class="actions">
+        <button class="primary" onclick="copyCfg()">複製設定</button>
+        <a href="https://github.com/ChiJiun/bitfinex-lending-bot/edit/master/config.json"
+           target="_blank" rel="noopener"><button>在 GitHub 編輯 ↗</button></a>
+        <button onclick="renderSettings(true)">還原成目前設定</button>
+      </div>
     </div>
   </section>
   <section>
@@ -123,7 +114,7 @@
     <div id="runs"></div>
   </section>
 </main>
-<footer>資料由 GitHub Actions 每輪執行後加密發佈 · 資料時間 <span id="updated">–</span></footer>
+<footer>資料由 GitHub Actions 每輪執行後發佈 · 資料時間 <span id="updated">–</span></footer>
 
 <script>
 let chart, payload;
@@ -131,66 +122,18 @@ const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { minimumFractionDig
 const ts = ms => ms ? new Date(ms).toLocaleString("zh-TW", { hour12: false }) : "–";
 const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-async function decryptBlob(password, blob) {
-  const enc = new TextEncoder();
-  const km = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: b64d(blob.salt), iterations: blob.kdf_iters || 300000, hash: "SHA-256" },
-    km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64d(blob.iv) }, key, b64d(blob.ct));
-  return JSON.parse(new TextDecoder().decode(pt));
-}
-
-async function fetchData(password) {
-  const r = await fetch("data.enc?t=" + Date.now(), { cache: "no-store" });
-  if (r.status === 404) throw new Error("尚無資料 — 等機器人在 GitHub Actions 跑完第一輪後就會出現");
-  if (!r.ok) throw new Error("讀取 data.enc 失敗: HTTP " + r.status);
-  try {
-    return await decryptBlob(password, await r.json());
-  } catch (e) {
-    throw new Error("WRONG_PASSWORD");
-  }
-}
-
-const savedPw = () => localStorage.getItem("dashpw");
-
-async function unlock() {
-  const pw = document.getElementById("pw").value;
-  const err = document.getElementById("gateErr");
-  err.textContent = "";
-  try {
-    payload = await fetchData(pw);
-  } catch (e) {
-    err.textContent = e.message === "WRONG_PASSWORD" ? "密碼錯誤" : e.message;
-    return;
-  }
-  localStorage.setItem("dashpw", pw); // 記住密碼,下次開啟免輸入
-  document.getElementById("gate").style.display = "none";
-  render();
-}
-
-function lock() {
-  localStorage.removeItem("dashpw");
-  location.reload();
-}
-
-// 複製一個內含密碼的免登入網址(存書籤或傳到手機用)
-function copyLink() {
-  const pw = savedPw();
-  if (!pw) return;
-  const link = location.origin + location.pathname + "#" + encodeURIComponent(pw);
-  navigator.clipboard.writeText(link).then(() => alert("免登入連結已複製!\n把它存成書籤,或傳到手機上打開即可免密碼進入。"));
-}
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 
 async function refresh() {
-  const pw = savedPw();
-  if (!pw) return;
+  const err = document.getElementById("error");
   try {
-    payload = await fetchData(pw);
-    document.getElementById("error").textContent = "";
+    const r = await fetch("data.json?t=" + Date.now(), { cache: "no-store" });
+    if (r.status === 404) throw new Error("尚無資料 — 等機器人在 GitHub Actions 跑完第一輪後就會出現");
+    if (!r.ok) throw new Error("讀取 data.json 失敗: HTTP " + r.status);
+    payload = await r.json();
+    err.textContent = "";
   } catch (e) {
-    document.getElementById("error").textContent = "更新失敗:" + e.message;
+    err.textContent = "更新失敗:" + e.message;
     return;
   }
   render();
@@ -204,7 +147,7 @@ function table(headers, rows) {
 
 function render() {
   const sel = document.getElementById("ccy");
-  const currencies = Object.keys(payload.currencies);
+  const currencies = Object.keys(payload.currencies || {});
   if (sel.options.length !== currencies.length) {
     const prev = sel.value;
     sel.innerHTML = currencies.map(c => `<option>${c}</option>`).join("");
@@ -213,7 +156,7 @@ function render() {
   }
   const d = payload.currencies[sel.value || currencies[0]];
   const err = document.getElementById("error");
-  err.textContent = d && d.error ? "此幣別資料讀取失敗:" + d.error : "";
+  if (d && d.error) err.textContent = "此幣別資料讀取失敗:" + d.error;
 
   if (d && !d.error) {
     document.getElementById("balance").textContent = fmt(d.balance) + " " + d.currency;
@@ -266,8 +209,41 @@ function render() {
       <pre>${esc(r.log || "(無輸出)")}</pre>
     </details>`).join("") || '<div class="card empty">尚無執行紀錄</div>';
 
-  renderSettings(false);
+  if (sessionStorage.getItem("cfgUnlocked") === "1") revealSettings();
   document.getElementById("updated").textContent = ts(payload.generated_ms);
+}
+
+/* ---------- 參數設定(需密碼) ----------
+   密碼比對的是 workflow 用 Secret DASHBOARD_PASSWORD 產生、隨資料一起發佈的 PBKDF2 雜湊。
+   這道檢查只在瀏覽器端執行,擋不住懂 DevTools 的人 —— 但設定頁本身不會寫入 repo,
+   真正的寫入權限一律來自使用者自己的 GitHub 登入。                                  */
+
+async function passwordOk(pw) {
+  const g = payload && payload.password;
+  if (!g) return false;
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: b64d(g.salt), iterations: g.iters, hash: "SHA-256" }, km, 256);
+  return hex(bits) === hex(b64d(g.hash));
+}
+
+async function unlockSettings() {
+  const errEl = document.getElementById("cfgErr");
+  const pw = document.getElementById("cfgPw").value;
+  errEl.textContent = "";
+  if (!payload || !payload.password) {
+    errEl.textContent = "這份資料沒有帶密碼設定 — 請確認 Secret DASHBOARD_PASSWORD 已設定";
+    return;
+  }
+  if (!await passwordOk(pw)) { errEl.textContent = "密碼錯誤"; return; }
+  sessionStorage.setItem("cfgUnlocked", "1");
+  revealSettings();
+}
+
+function revealSettings() {
+  document.getElementById("cfgLock").hidden = true;
+  document.getElementById("cfgPanel").hidden = false;
+  renderSettings(false);
 }
 
 const GLOBAL_FIELDS = [
@@ -342,23 +318,10 @@ function copyCfg() {
     () => { ta.removeAttribute("readonly"); ta.select(); alert("請手動複製上方內容"); });
 }
 
-document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });
+document.getElementById("cfgPw").addEventListener("keydown", e => { if (e.key === "Enter") unlockSettings(); });
 
-(async () => {
-  // 網址帶 #密碼 時自動解鎖,成功後把密碼從網址列移除並記住
-  const fromHash = location.hash ? decodeURIComponent(location.hash.slice(1)) : "";
-  const pw = fromHash || savedPw();
-  if (pw) {
-    try {
-      payload = await fetchData(pw);
-      localStorage.setItem("dashpw", pw);
-      if (fromHash) history.replaceState(null, "", location.pathname);
-      document.getElementById("gate").style.display = "none";
-      render();
-    } catch { localStorage.removeItem("dashpw"); }
-  }
-  setInterval(refresh, 300_000); // 每 5 分鐘自動更新
-})();
+refresh();
+setInterval(refresh, 300000); // 每 5 分鐘自動更新
 </script>
 </body>
 </html>
