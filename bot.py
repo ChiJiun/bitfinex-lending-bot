@@ -200,7 +200,8 @@ def funding_available(client: Bitfinex, currency: str) -> float:
     return 0.0
 
 
-def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: float, dry_run: bool) -> None:
+def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: float,
+                 dry_run: bool, paused: bool = False) -> None:
     symbol = f"f{currency}"
 
     ticker = client.public(f"ticker/{symbol}")
@@ -234,19 +235,28 @@ def run_currency(client: Bitfinex, currency: str, cfg: dict, stale_minutes: floa
     patient_minutes = float(cfg.get("high_rate_stale_minutes", stale_minutes))
     for offer in client.auth(f"auth/r/funding/offers/{symbol}"):
         age_min = (now_ms - offer[O_MTS_CREATED]) / 60_000
-        # 高利率的單多等一會兒(等尖峰買家),低利率的照常重新定價
-        limit = (patient_minutes
-                 if renew_threshold and float(offer[O_RATE]) * 100 >= renew_threshold
-                 else stale_minutes)
-        if age_min < limit:
-            continue
-        log(f"{currency}: 取消舊掛單 #{offer[O_ID]} — {float(offer[O_AMOUNT]):.2f} @ "
-            f"{float(offer[O_RATE]) * 100:.4f}%/日,已掛 {age_min:.0f} 分鐘")
+        if paused:
+            reason = "暫停中,收回未成交掛單"
+        else:
+            # 高利率的單多等一會兒(等尖峰買家),低利率的照常重新定價
+            limit = (patient_minutes
+                     if renew_threshold and float(offer[O_RATE]) * 100 >= renew_threshold
+                     else stale_minutes)
+            if age_min < limit:
+                continue
+            reason = f"已掛 {age_min:.0f} 分鐘"
+        log(f"{currency}: 取消掛單 #{offer[O_ID]} — {float(offer[O_AMOUNT]):.2f} @ "
+            f"{float(offer[O_RATE]) * 100:.4f}%/日,{reason}")
         if not dry_run:
             client.auth("auth/w/funding/offer/cancel", {"id": offer[O_ID]})
         cancelled += 1
     if cancelled and not dry_run:
         time.sleep(2)  # 等取消後的資金回到可用餘額
+
+    if paused:
+        log(f"{currency}: ⏸ 掛單已暫停 — 本輪收回 {cancelled} 筆掛單,不再掛新單。"
+            f"已成交的放貸會依原本天數自然到期回流(無法提前收回)")
+        return
 
     available = funding_available(client, currency) - float(cfg.get("reserve_amount", 0))
     max_lend = float(cfg.get("max_lend_amount", 0))
@@ -307,6 +317,9 @@ def main() -> int:
     config = json.loads((SCRIPT_DIR / "config.json").read_text(encoding="utf-8"))
     client = Bitfinex(key, secret)
     stale_minutes = float(config.get("stale_offer_minutes", 60))
+    paused_all = bool(config.get("paused"))
+    if paused_all:
+        log("⏸ 全域暫停(config.json 的 paused=true):只收回掛單,不掛新單")
 
     failed = False
     for currency, cfg in config.get("currencies", {}).items():
@@ -314,7 +327,8 @@ def main() -> int:
             log(f"{currency}: 未啟用,跳過")
             continue
         try:
-            run_currency(client, currency, cfg, stale_minutes, dry_run)
+            run_currency(client, currency, cfg, stale_minutes, dry_run,
+                         paused_all or bool(cfg.get("paused")))
         except Exception as exc:
             failed = True
             log(f"{currency}: 失敗 — {exc}")

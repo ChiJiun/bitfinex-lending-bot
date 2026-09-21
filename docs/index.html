@@ -247,6 +247,7 @@ function revealSettings() {
 }
 
 const GLOBAL_FIELDS = [
+  { key: "paused", label: "⏸ 暫停掛單(收回未成交的單、不掛新單)", type: "bool" },
   { key: "stale_offer_minutes", label: "一般掛單多久重新定價(分鐘)", min: 5, step: 5 },
 ];
 const CCY_FIELDS = [

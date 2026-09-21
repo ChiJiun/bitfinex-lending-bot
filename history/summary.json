@@ -1,0 +1,39 @@
+{
+  "exported_utc": "2026-09-21 08:39:20",
+  "currencies": [
+    {
+      "currency": "USD",
+      "fills": {
+        "count": 123,
+        "first": "2026-03-02 08:10:39",
+        "last": "2026-09-20 21:19:00",
+        "total_amount": 26176.55,
+        "weighted_daily_rate_pct": 0.030498,
+        "weighted_apr_pct": 11.132,
+        "min_apr_pct": 4.7,
+        "max_apr_pct": 17.396
+      },
+      "interest": {
+        "count": 192,
+        "first": "2026-03-03 01:30:21",
+        "last": "2026-09-21 01:30:25",
+        "total": 28.794254
+      },
+      "offers": {
+        "count": 176,
+        "executed": 119,
+        "cancelled": 57,
+        "fill_rate_pct": 67.6
+      }
+    },
+    {
+      "currency": "UST",
+      "offers": {
+        "count": 0,
+        "executed": 0,
+        "cancelled": 0,
+        "fill_rate_pct": 0
+      }
+    }
+  ]
+}
