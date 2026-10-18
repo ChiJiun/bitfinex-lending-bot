@@ -1,35 +1,27 @@
 {
-  "_說明": "所有利率單位都是「每日利率 %」。0.02 = 0.02%/日,約年化 7.3%。階梯基準錨定「全市場實際成交均價」——不是訂單簿最低價(太低,等於賤賣),也不是 ticker 的 FRR(含過去鎖倉高利長單,通常高於當下成交價,掛上去不會成交)。鎖倉門檻依近 30 天 fUSD 成交分布校準:平常 2 天保持彈性,只有利率被推到異常高檔(≥0.032 鎖 30 天、≥0.045 鎖 120 天)才鎖倉。",
+  "_說明": "所有利率單位都是「每日利率 %」。0.02 = 0.02%/日,約年化 7.3%。定價錨定「全市場實際成交價」:分別看 2 天期與 7 天期市場最近 band_hours 小時的成交利率分布,每筆資金挑目標價較高的市場掛出;掛單剛送出時掛在第 start_percentile 分位,隨時間線性降到第 floor_percentile 分位(decay_minutes 分鐘降完),偏高就撤單重掛。天期硬性上限 7 天(程式寫死,max_period_days 設更大也會被壓回),2 天期市場的單只有利率達「近一週尖峰」(spike_percentile 分位)才鎖滿上限天期。",
   "paused": true,
-  "stale_offer_minutes": 30,
+  "loop_interval_seconds": 60,
+  "publish_every_minutes": 15,
   "currencies": {
     "USD": {
       "enabled": true,
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "min_daily_rate_pct": 0.018,
+      "rung_spread_percentile": 0,
+      "markets": [2, 7],
+      "band_hours": 4,
+      "start_percentile": 90,
+      "floor_percentile": 40,
+      "decay_minutes": 240,
+      "reprice_tolerance_pct": 2,
+      "min_daily_rate_pct": 0.01,
+      "max_period_days": 7,
+      "spike_percentile": 90,
+      "spike_lookback_hours": 168,
+      "consolidate_dust": true,
       "reserve_amount": 0,
-      "period_rules": [
-        {
-          "min_daily_rate_pct": 0.045,
-          "period_days": 120
-        },
-        {
-          "min_daily_rate_pct": 0.032,
-          "period_days": 30
-        },
-        {
-          "min_daily_rate_pct": 0.0,
-          "period_days": 2
-        }
-      ],
-      "market_anchor_percentile": 25,
-      "market_top_percentile": 90,
-      "ladder_step_pct": 3,
-      "renew_min_daily_rate_pct": 0.02,
-      "renew_lookback_days": 7,
-      "high_rate_stale_minutes": 240,
       "max_lend_amount": 0
     },
     "UST": {
@@ -37,28 +29,19 @@
       "min_offer_size": 150,
       "max_offer_size": 5000,
       "num_ladder_steps": 4,
-      "min_daily_rate_pct": 0.018,
+      "rung_spread_percentile": 0,
+      "markets": [2, 7],
+      "band_hours": 4,
+      "start_percentile": 90,
+      "floor_percentile": 40,
+      "decay_minutes": 240,
+      "reprice_tolerance_pct": 2,
+      "min_daily_rate_pct": 0.01,
+      "max_period_days": 7,
+      "spike_percentile": 90,
+      "spike_lookback_hours": 168,
+      "consolidate_dust": true,
       "reserve_amount": 0,
-      "period_rules": [
-        {
-          "min_daily_rate_pct": 0.045,
-          "period_days": 120
-        },
-        {
-          "min_daily_rate_pct": 0.032,
-          "period_days": 30
-        },
-        {
-          "min_daily_rate_pct": 0.0,
-          "period_days": 2
-        }
-      ],
-      "market_anchor_percentile": 25,
-      "market_top_percentile": 90,
-      "ladder_step_pct": 3,
-      "renew_min_daily_rate_pct": 0.02,
-      "renew_lookback_days": 7,
-      "high_rate_stale_minutes": 240,
       "max_lend_amount": 0
     }
   }

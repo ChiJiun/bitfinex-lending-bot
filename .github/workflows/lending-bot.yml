@@ -2,7 +2,9 @@ name: Bitfinex Lending Bot
 
 on:
   schedule:
-    # 每 15 分鐘跑一次(UTC)。repo 為公開,Actions 分鐘數無上限。
+    # 每 15 分鐘「嘗試」啟動一個長跑工作(UTC)。GitHub 的排程常延遲一到數小時,
+    # 所以真正的執行頻率不靠排程,而靠每個工作在 LOOP_MINUTES 內每分鐘檢查一次;
+    # concurrency 讓同時間只有一個工作在跑,前一個結束後排隊中的下一個立刻接手。
     - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
@@ -10,9 +12,13 @@ on:
         description: "DRY_RUN(只顯示動作、不真的下單)"
         type: boolean
         default: false
+      loop_minutes:
+        description: "長跑分鐘數(0 = 只跑一輪就結束)"
+        type: number
+        default: 0
 
 permissions:
-  contents: write # 發佈儀表板資料與 keep-alive commit 需要
+  contents: write # 發佈儀表板資料需要
 
 concurrency:
   group: lending-bot
@@ -21,7 +27,7 @@ concurrency:
 jobs:
   lend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 358 # GitHub 單一工作上限 6 小時
     steps:
       - uses: actions/checkout@v4
 
@@ -38,17 +44,23 @@ jobs:
         env:
           BFX_API_KEY: ${{ secrets.BFX_API_KEY }}
           BFX_API_SECRET: ${{ secrets.BFX_API_SECRET }}
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          # 排程觸發:長跑 340 分鐘(留餘裕給安裝與最後發佈);手動觸發:依輸入
+          LOOP_MINUTES: ${{ github.event_name == 'schedule' && '340' || inputs.loop_minutes }}
+          PUBLISH_IN_LOOP: "1" # 長跑中每 publish_every_minutes 分鐘發佈一次儀表板
         # 輸出留一份到 bot_run.log 給儀表板顯示,並保留原始退出碼
         run: |
           set +e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           python bot.py 2>&1 | tee bot_run.log
           code=${PIPESTATUS[0]}
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit "$code"
 
       # 就算機器人失敗也發佈,讓儀表板看得到錯誤 log
-      - name: Build encrypted dashboard data
+      - name: Build dashboard data
         if: always()
         env:
           BFX_API_KEY: ${{ secrets.BFX_API_KEY }}

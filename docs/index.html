@@ -96,7 +96,7 @@
     <div id="cfgPanel" hidden>
       <div class="note">
         改動下方欄位會即時產生新的 <code>config.json</code>。按「複製設定」後點「在 GitHub 編輯」,
-        在編輯器裡全選貼上並 Commit,下一輪(15 分鐘內)機器人就會套用。<br>
+        在編輯器裡全選貼上並 Commit,機器人下一次重新讀取設定(長跑中每 15 分鐘)就會套用。<br>
         這個頁面<b>不會、也不能</b>直接改動 repo —— 寫入權限一律走你自己的 GitHub 登入。
       </div>
       <div id="cfgForm"></div>
@@ -248,19 +248,24 @@ function revealSettings() {
 
 const GLOBAL_FIELDS = [
   { key: "paused", label: "⏸ 暫停掛單(收回未成交的單、不掛新單)", type: "bool" },
-  { key: "stale_offer_minutes", label: "一般掛單多久重新定價(分鐘)", min: 5, step: 5 },
+  { key: "loop_interval_seconds", label: "長跑模式每幾秒檢查一次", min: 15, step: 15 },
+  { key: "publish_every_minutes", label: "儀表板每幾分鐘發佈一次", min: 5, step: 5 },
 ];
 const CCY_FIELDS = [
   { key: "enabled", label: "啟用此幣別", type: "bool" },
   { key: "max_lend_amount", label: "最大放貸總額(0 = 不限)", min: 0, step: 100 },
   { key: "reserve_amount", label: "保留不放貸的金額", min: 0, step: 50 },
   { key: "min_daily_rate_pct", label: "利率地板", type: "rate", min: 0, step: 0.001 },
-  { key: "renew_min_daily_rate_pct", label: "續借門檻利率", type: "rate", min: 0, step: 0.001 },
-  { key: "high_rate_stale_minutes", label: "高利率單等待(分鐘)", min: 5, step: 30 },
-  { key: "renew_lookback_days", label: "續借回看天數", min: 1, step: 1 },
-  { key: "market_anchor_percentile", label: "階梯下界(成交分位)", min: 0, max: 100, step: 5 },
-  { key: "market_top_percentile", label: "階梯上界(成交分位)", min: 0, max: 100, step: 5 },
-  { key: "num_ladder_steps", label: "階梯層數", min: 1, max: 20, step: 1 },
+  { key: "max_period_days", label: "掛單天期上限(程式硬性 ≤ 7)", min: 2, max: 7, step: 1 },
+  { key: "band_hours", label: "成交帶回看幾小時", min: 1, max: 48, step: 1 },
+  { key: "start_percentile", label: "新掛單起始分位", min: 0, max: 99, step: 5 },
+  { key: "floor_percentile", label: "遞減到的最低分位", min: 0, max: 99, step: 5 },
+  { key: "decay_minutes", label: "幾分鐘降到最低分位", min: 0, step: 30 },
+  { key: "reprice_tolerance_pct", label: "偏高超過幾 % 才重掛", min: 0, step: 1 },
+  { key: "spike_percentile", label: "尖峰鎖倉分位(100 = 不鎖)", min: 50, max: 100, step: 1 },
+  { key: "spike_lookback_hours", label: "尖峰回看小時數", min: 24, step: 24 },
+  { key: "num_ladder_steps", label: "拆成幾筆", min: 1, max: 20, step: 1 },
+  { key: "rung_spread_percentile", label: "每筆分位間距", min: 0, max: 20, step: 1 },
   { key: "min_offer_size", label: "單筆最小金額", min: 150, step: 10 },
   { key: "max_offer_size", label: "單筆最大金額", min: 150, step: 500 },
 ];

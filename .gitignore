@@ -3,3 +3,5 @@
 bot_run.log
 __pycache__/
 *.pyc
+.cache/
+.pytest_cache/
