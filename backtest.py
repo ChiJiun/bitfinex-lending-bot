@@ -100,7 +100,8 @@ class Sim:
         self.start, self.end, self.rng = start, end, random.Random(seed)
         self.cash, self.offers, self.credits, self.fills = capital, [], [], []
         self.interest = self.lent_steps = self.offer_steps = 0.0
-        self.band = {p: Band(MARKET[p], cfg.get("band_hours", 4)) for p in MARKET}
+        markets = {bot.clamp_period(p) for p in cfg.get("markets", [2, 7])}
+        self.band = {p: Band(MARKET[p], cfg.get("band_hours", 4)) for p in MARKET if p in markets}
         self.spike_band = Band(MARKET[2], cfg.get("spike_lookback_hours", 168))
 
     def hold_hours(self, period: int) -> float:
@@ -183,13 +184,13 @@ def strat_legacy(sim: Sim, ts: int) -> None:
 def strat_current(sim: Sim, ts: int) -> None:
     """現行 bot.py:雙市場取優 + 依年齡遞減定價 + 零頭併單 + 尖峰鎖倉(≤7 天)。"""
     cfg = sim.cfg
-    if not sim.band[2].active():
-        return
     bands = {p: b.rates() for p, b in sim.band.items() if b.active()}
+    if not bands:
+        return
     spike = bot.percentile(sim.spike_band.rates(), cfg.get("spike_percentile", 90)) if sim.spike_band.active() else 0.0
     tol = cfg.get("reprice_tolerance_pct", 2) / 100
     for o in list(sim.offers):
-        rates = bands.get(o["market"]) or bands.get(2)
+        rates = bands.get(o["market"]) or next(iter(bands.values()))
         if not rates:
             continue
         target = bot.target_rate(rates, cfg, (ts - o["born"]) / 60_000)
@@ -239,12 +240,7 @@ def main() -> int:
             c = dict(cfg, start_percentile=sq, floor_percentile=fq, decay_minutes=dm)
             show(f"起始 {sq} → 最低 {fq},{dm} 分鐘", run(strat_current, c, args.capital, 15))
         for markets in ([2], [7]):
-            c = dict(cfg, markets=markets)
-            MARKET_BAK = MARKET
-            try:
-                show(f"只用 {markets[0]} 天期市場", run(strat_current, c, args.capital, 15))
-            finally:
-                MARKET = MARKET_BAK
+            show(f"只用 {markets[0]} 天期市場", run(strat_current, dict(cfg, markets=markets), args.capital, 15))
         show("不鎖倉(spike_percentile 100)", run(strat_current, dict(cfg, spike_percentile=100), args.capital, 15))
     return 0
 
